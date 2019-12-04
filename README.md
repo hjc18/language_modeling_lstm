@@ -1,2 +1,3 @@
 # language_modeling_lstm
-Language modeling based on Penn Treebank (RNN/LSTM, Pytorch)
+PTB language modeling (RNN/LSTM, Pytorch)
+A reproduction of Recurrent Neural Network Regularization (https://arxiv.org/abs/1409.2329)
