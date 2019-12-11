@@ -3,7 +3,6 @@ import time
 import math
 import torch
 import torch.nn as nn
-
 import corpus
 import model
 
@@ -21,13 +20,15 @@ parser.add_argument('--batch_size', type=int, default=20)
 parser.add_argument('--bptt', type=int, default=35)
 parser.add_argument('--dropout', type=float, default=0.5)
 parser.add_argument('--save', type=str,  default='./output/model_test.pt')
-parser.add_argument('--opt', type=str,  default='SGD')
+parser.add_argument('--opt', type=str,  default='SGD',
+                    help='SGD, Adam, RMSprop, Momentum')
 args = parser.parse_args()
 
 torch.manual_seed(1111)
 
 # Load data
 corpus = corpus.Corpus(args.data)
+
 
 def batchify(data, bsz):
     # Work out how cleanly we can divide the dataset into bsz parts.
@@ -88,15 +89,11 @@ def evaluate(data_source):
             # output size(bptt*bsz, ntoken)
             total_loss += len(data) * criterion(output, targets).data
             hidden = repackage_hidden(hidden)
-        return total_loss.item() / len(data_source)
+        return total_loss / len(data_source)
 
 
 def train():
-    # Turn on training mode which enables dropout.
-    if args.opt == "SGD":
-        opt = torch.optim.SGD(model.parameters(), lr=lr)
-    else:
-        opt = torch.optim.Adam(model.parameters(), lr=lr)
+    # choose a optimizer
 
     model.train()
     total_loss = 0
@@ -108,10 +105,9 @@ def train():
         # Starting each batch, we detach the hidden state from how it was previously produced.
         # If we didn't, the model would try backpropagating all the way to start of the dataset.
         hidden = repackage_hidden(hidden)
-        model.zero_grad()
-        opt.zero_grad()
         output, hidden = model(data, hidden)
         loss = criterion(output, targets)
+        opt.zero_grad()
         loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
@@ -121,7 +117,7 @@ def train():
         total_loss += loss.data
 
         if batch % interval == 0 and batch > 0:
-            cur_loss = total_loss.item() / interval
+            cur_loss = total_loss / interval
             elapsed = time.time() - start_time
             print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}'.format(
@@ -133,6 +129,15 @@ def train():
 # Loop over epochs.
 lr = args.lr
 best_val_loss = None
+opt = torch.optim.SGD(model.parameters(), lr=lr)
+if args.opt == 'Adam':
+    opt = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.99))
+    lr = 0.001
+if args.opt == 'Momentum':
+    opt = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.8)
+if args.opt == 'RMSprop':
+    opt = torch.optim.RMSprop(model.parameters(), lr=0.001, alpha=0.9)
+    lr = 0.001
 
 try:
     for epoch in range(1, args.epochs+1):
@@ -151,7 +156,11 @@ try:
             best_val_loss = val_loss
         else:
             # Anneal the learning rate if no improvement has been seen in the validation dataset.
-            lr /= 4.0
+            if args.opt == 'SGD' or args.opt == 'Momentum':
+                lr /= 4.0
+                for group in opt.param_groups:
+                    group['lr'] = lr
+
 except KeyboardInterrupt:
     print('-' * 89)
     print('Exiting from training early')
